@@ -57,14 +57,26 @@ func (js *jetStream) CreateStreamSnapshotV2(store StreamStore, deadline time.Dur
 
 // Stream our snapshot through S2 compression and the custom archive format.
 func (js *jetStream) streamSnapshotV2(store StreamStore, state *StreamState, w io.WriteCloser, includeConsumers bool, sa *streamAssignment, errCh chan error) {
-	defer close(errCh)
-	defer w.Close()
-
 	enc := s2.NewWriter(w)
-	defer enc.Close()
-
 	tw := archive.NewWriter(enc)
-	defer tw.Close()
+	defer func() {
+		// Finalizing an archive, compressor or transport can fail after
+		// all regular writes and Flush have succeeded. Report the first
+		// failure before closing the snapshot status channel.
+		report := func(err error) {
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+					// Preserve an earlier write/flush error without blocking.
+				}
+			}
+		}
+		report(tw.Close())
+		report(enc.Close())
+		report(w.Close())
+		close(errCh)
+	}()
 
 	now := time.Now()
 	clustered := js.isClustered()
