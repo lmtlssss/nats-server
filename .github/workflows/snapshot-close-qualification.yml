@@ -1,0 +1,22 @@
+name: NATS snapshot finalize error qualification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-jetstream-snapshot-finalize-errors-20261025
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Require source formatting
+        run: test -z "$(gofmt -l server/stream_backup.go server/stream_backup_close_error_test.go)"
+      - name: Exercise stream finalization error propagation
+        run: go test -count=1 -run 'TestStreamSnapshotV2(ReportsFinalTransportCloseFailure|SuccessfulCloseHasNoError)' ./server
